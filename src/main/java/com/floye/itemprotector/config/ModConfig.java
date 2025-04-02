@@ -12,4 +12,8 @@ public class ModConfig {
         this.dropProtectionTimeout = dropProtectionTimeout;
         this.dropCancelMessage = dropCancelMessage;
     }
+
+    public List<String> getWhitelistItems() {
+        return whitelistItems;
+    }
 }

@@ -1,63 +1,40 @@
 package com.floye.itemprotector.mixin;
 
 import com.floye.itemprotector.config.ModConfig;
+import com.floye.itemprotector.util.ConfigLoader;
+import com.floye.itemprotector.util.ConfigManager;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
 import net.minecraft.registry.Registries;
+import net.minecraft.text.Text;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.util.hit.HitResult;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+@Mixin(PlayerInventory.class)
+public class PlayerEntityMixin {
 
-@Mixin(PlayerEntity.class)
-public abstract class PlayerEntityMixin {
-    private static final Map<UUID, Long> recentDropAttempts = new HashMap<>();
-    private static ModConfig config;
+    @Inject(method = "dropSelectedItem(Z)Lnet/minecraft/item/ItemStack;", at = @At("HEAD"), cancellable = true)
+    private void dropSelectedItem(boolean entireStack, CallbackInfoReturnable<ItemStack> cir) {
+        ModConfig config = ConfigLoader.loadConfig();
+        PlayerEntity player = ((PlayerInventory)(Object)this).player;
+        PlayerInventory inventory = (PlayerInventory) (Object) this;
+        ItemStack stack = inventory.getStack(inventory.selectedSlot);
 
-    // Méthode pour initialiser la configuration (à appeler dans votre mod principal)
-    private static void setConfig(ModConfig modConfig) {
-        config = modConfig;
-    }
+        String itemRegistryName = Registries.ITEM.getId(stack.getItem()).toString();
 
-    @Inject(method = "dropItem", at = @At("HEAD"), cancellable = true)
-    private void onDropItem(ItemStack stack, boolean entireStack, CallbackInfoReturnable<Boolean> cir) {
-        PlayerEntity player = (PlayerEntity) (Object) this;
-        if (player instanceof ServerPlayerEntity serverPlayer && !player.getWorld().isClient()) {
-            // Instead of getting the stack from getMainHandStack(),
-            // use the injected "stack" parameter:
-            if (stack.isEmpty()) return; // Do nothing if the stack is empty
-
-            String itemId = Registries.ITEM.getId(stack.getItem()).toString();
-
-            // If the item is in the whitelist, allow it to be dropped
-            if (config.whitelistItems.contains(itemId)) {
-                UUID playerId = serverPlayer.getUuid();
-                long now = System.currentTimeMillis();
-
-                // Check the drop protection delay
-                if (recentDropAttempts.containsKey(playerId)) {
-                    long lastAttempt = recentDropAttempts.get(playerId);
-                    if ((now - lastAttempt) <= config.dropProtectionTimeout * 1000L) {
-                        recentDropAttempts.remove(playerId);
-                        return; // Allow the drop after a rapid second attempt
-                    }
-                }
-
-                recentDropAttempts.put(playerId, now);
-                cir.setReturnValue(true); // Allow the drop to occur
-            } else {
-                // Block the drop and send a message
-                serverPlayer.sendMessage(Text.literal(config.dropCancelMessage), true);
-                cir.setReturnValue(false); // Cancel the drop
-            }
+        if (config.getWhitelistItems().contains(itemRegistryName)) {
+            player.sendMessage(Text.literal(ConfigManager.CONFIG.dropCancelMessage), true);
+            cir.setReturnValue(ItemStack.EMPTY); // Empêche le drop
+            cir.cancel();
         }
     }
 }
-
