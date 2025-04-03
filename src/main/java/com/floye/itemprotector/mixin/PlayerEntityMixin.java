@@ -3,6 +3,7 @@ package com.floye.itemprotector.mixin;
 import com.floye.itemprotector.config.ModConfig;
 import com.floye.itemprotector.util.ConfigLoader;
 import com.floye.itemprotector.util.ConfigManager;
+import com.floye.itemprotector.util.ProtectedItem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
@@ -22,6 +23,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(PlayerInventory.class)
 public class PlayerEntityMixin {
 
+    // Dans PlayerEntityMixin
     @Inject(method = "dropSelectedItem(Z)Lnet/minecraft/item/ItemStack;", at = @At("HEAD"), cancellable = true)
     private void dropSelectedItem(boolean entireStack, CallbackInfoReturnable<ItemStack> cir) {
         ModConfig config = ConfigLoader.loadConfig();
@@ -30,8 +32,18 @@ public class PlayerEntityMixin {
         ItemStack stack = inventory.getStack(inventory.selectedSlot);
 
         String itemRegistryName = Registries.ITEM.getId(stack.getItem()).toString();
+        String componentsString = stack.getComponents().isEmpty() ? null : stack.getComponents().toString();
 
-        if (config.getWhitelistItems().contains(itemRegistryName)) {
+        // Vérifier si l'item est protégé
+        boolean isProtected = false;
+        for (ProtectedItem protectedItem : config.getProtectedItems()) {
+            if (protectedItem.matches(itemRegistryName, componentsString)) {
+                isProtected = true;
+                break;
+            }
+        }
+
+        if (isProtected) {
             player.sendMessage(Text.literal(ConfigManager.CONFIG.dropCancelMessage), true);
             cir.setReturnValue(ItemStack.EMPTY); // Empêche le drop
             cir.cancel();

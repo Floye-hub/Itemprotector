@@ -4,6 +4,7 @@ import com.floye.itemprotector.config.ModConfig;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import java.util.List;
+import java.util.ArrayList;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,16 +17,39 @@ public class ConfigLoader {
     public static ModConfig loadConfig() {
         try {
             if (!Files.exists(configPath)) {
+                // Créer la configuration par défaut
+                List<String> defaultWhitelist = List.of("minecraft:diamond", "minecraft:netherite_ingot");
+                List<ProtectedItem> defaultProtectedItems = new ArrayList<>();
+
+                // Convertir les éléments de la whitelist en ProtectedItems
+                for (String item : defaultWhitelist) {
+                    defaultProtectedItems.add(new ProtectedItem(item, null));
+                }
+
                 ModConfig defaultConfig = new ModConfig(
-                        List.of("minecraft:diamond", "minecraft:netherite_ingot"),
+                        defaultWhitelist,
+                        defaultProtectedItems,
                         5,
-                        "§cYou can’t drop that item yet! Please try again."
+                        "§cYou can't drop that item yet! Please try again."
                 );
                 saveConfig(defaultConfig);
                 return defaultConfig;
             }
+
             String json = Files.readString(configPath);
-            return gson.fromJson(json, ModConfig.class);
+            ModConfig config = gson.fromJson(json, ModConfig.class);
+
+            // Si c'est une ancienne configuration sans protectedItems, initialiser cette liste
+            if (config.protectedItems == null) {
+                config.protectedItems = new ArrayList<>();
+                if (config.whitelistItems != null) {
+                    for (String item : config.whitelistItems) {
+                        config.protectedItems.add(new ProtectedItem(item, null));
+                    }
+                }
+            }
+
+            return config;
         } catch (IOException e) {
             throw new RuntimeException("Failed to load config", e);
         }
