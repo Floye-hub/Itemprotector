@@ -5,7 +5,11 @@
 	"mixins": [
 		"ExampleMixin",
 		"PlayerEntityMixin",
-		"ScreenHandlerMixin"
+		"ScreenHandlerMixin",
+		"ToolUsageMixin",
+		"PlayerInteractionManagerMixin",
+		"LivingEntityDamageMixin",
+		"PlayerEntityDeathMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

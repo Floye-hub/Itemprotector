@@ -27,7 +27,6 @@ public class ConfigLoader {
                 }
 
                 ModConfig defaultConfig = new ModConfig(
-                        defaultWhitelist,
                         defaultProtectedItems,
                         5,
                         "§cYou can't drop that item yet! Please try again."
@@ -39,16 +38,7 @@ public class ConfigLoader {
             String json = Files.readString(configPath);
             ModConfig config = gson.fromJson(json, ModConfig.class);
 
-            // Si c'est une ancienne configuration sans protectedItems, initialiser cette liste
-            if (config.protectedItems == null) {
-                config.protectedItems = new ArrayList<>();
-                if (config.whitelistItems != null) {
-                    for (String item : config.whitelistItems) {
-                        config.protectedItems.add(new ProtectedItem(item, null));
-                    }
-                }
-            }
-
+            //pas besoin de la logique pour la whitelist
             return config;
         } catch (IOException e) {
             throw new RuntimeException("Failed to load config", e);

@@ -24,6 +24,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public class PlayerEntityMixin {
 
     // Dans PlayerEntityMixin
+    // Dans PlayerEntityMixin
     @Inject(method = "dropSelectedItem(Z)Lnet/minecraft/item/ItemStack;", at = @At("HEAD"), cancellable = true)
     private void dropSelectedItem(boolean entireStack, CallbackInfoReturnable<ItemStack> cir) {
         ModConfig config = ConfigLoader.loadConfig();
@@ -32,7 +33,7 @@ public class PlayerEntityMixin {
         ItemStack stack = inventory.getStack(inventory.selectedSlot);
 
         String itemRegistryName = Registries.ITEM.getId(stack.getItem()).toString();
-        String componentsString = stack.getComponents().isEmpty() ? null : stack.getComponents().toString();
+        String componentsString = getRelevantComponentsString(stack); // Utiliser getRelevantComponentsString ici
 
         // Vérifier si l'item est protégé
         boolean isProtected = false;
@@ -48,5 +49,22 @@ public class PlayerEntityMixin {
             cir.setReturnValue(ItemStack.EMPTY); // Empêche le drop
             cir.cancel();
         }
+    }
+
+    // Ajouter la méthode getRelevantComponentsString dans PlayerEntityMixin
+    private String getRelevantComponentsString(ItemStack stack) {
+        StringBuilder builder = new StringBuilder();
+
+        // Enchantements
+        if (stack.hasEnchantments()) {
+            builder.append("enchantments=").append(stack.getEnchantments().toString()).append(";");
+        }
+
+        // Vérifie si l'item est renommé (comparaison avec le nom par défaut)
+        if (!stack.getName().equals(stack.getItem().getName())) {
+            builder.append("custom_name=").append(stack.getName().getString()).append(";");
+        }
+
+        return builder.length() > 0 ? builder.toString() : null;
     }
 }

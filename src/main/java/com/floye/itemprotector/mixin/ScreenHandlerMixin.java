@@ -7,9 +7,9 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.text.Text;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import net.minecraft.world.World;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -18,11 +18,36 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(ScreenHandler.class)
 public abstract class ScreenHandlerMixin {
-    @Unique
-    private static final Logger LOGGER = LogManager.getLogger("ItemProtector");
 
     @Unique
     private boolean itemprotector_confirmDrop = false;
+
+    @Unique
+    private static final Text PROTECTED_ITEM_MESSAGE = Text.literal("§c[ItemProtector] §rThis item is protected! Click again to confirm the drop.");
+
+    @Unique
+    private static String getRelevantComponentsString(ItemStack stack) {
+        StringBuilder builder = new StringBuilder();
+
+        // Enchantements
+        if (stack.hasEnchantments()) {
+            builder.append("enchantments=").append(stack.getEnchantments().toString()).append(";");
+        }
+
+        // Vérifie si l'item est renommé (comparaison avec le nom par défaut)
+        if (!stack.getName().equals(stack.getItem().getName())) {
+            builder.append("custom_name=").append(stack.getName().getString()).append(";");
+        }
+
+        return builder.length() > 0 ? builder.toString() : null;
+    }
+
+    @Unique
+    private boolean isItemProtected(ModConfig config, ItemStack stack) {
+        String itemId = Registries.ITEM.getId(stack.getItem()).toString();
+        String componentsString = getRelevantComponentsString(stack);
+        return config.getProtectedItems().stream().anyMatch(p -> p.matches(itemId, componentsString));
+    }
 
     @Inject(
             method = "onSlotClick(IILnet/minecraft/screen/slot/SlotActionType;Lnet/minecraft/entity/player/PlayerEntity;)V",
@@ -32,64 +57,52 @@ public abstract class ScreenHandlerMixin {
     private void protectAllDrops(int slotIndex, int button, SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
         ScreenHandler handler = (ScreenHandler) (Object) this;
 
-        // Logs pour déboguer l'index du slot et le type d'action
-        LOGGER.info("Slot clicked: index={}, button={}, actionType={}, player={}", slotIndex, button, actionType, player.getName().getString());
+        ItemStack stack = null;
 
-        // Ignore l'action PICKUP car elle ne concerne pas les drops
-        if (actionType == SlotActionType.PICKUP) {
-            LOGGER.info("Ignoring PICKUP action.");
-            return;
+        boolean isPotentialDrop = false;
+
+        System.out.println("[ItemProtector] SlotActionType: " + actionType);
+        System.out.println("[ItemProtector] Button: " + button);
+        System.out.println("[ItemProtector] SlotIndex: " + slotIndex);
+
+        if (actionType == SlotActionType.THROW ) {
+            isPotentialDrop = true;
+        } else if (actionType == SlotActionType.PICKUP && (slotIndex == -999 || button == 1)) {
+            isPotentialDrop = true;
         }
 
-        // Vérifie si l'action est un drop (THROW ou QUICK_MOVE)
-        if (actionType == SlotActionType.THROW || actionType == SlotActionType.QUICK_MOVE) {
-            LOGGER.info("Detected potential drop action: {}", actionType);
-
-            ItemStack stack = null;
-
-            // Vérifie si l'action vient du curseur
-            if (slotIndex == -999) { // Index du curseur dans 1.21.1
+        if (isPotentialDrop) {
+            if (slotIndex == -999) {
                 stack = handler.getCursorStack();
-                LOGGER.info("Cursor stack detected: {}", stack);
-            }
-            // Vérifie si l'action provient d'un slot classique de l'inventaire
-            else if (slotIndex >= 0 && slotIndex < handler.slots.size()) {
+            } else if (slotIndex >= 0 && slotIndex < handler.slots.size()) {
                 stack = handler.getSlot(slotIndex).getStack();
-                LOGGER.info("Slot stack detected: {}", stack);
             }
 
-            // Vérifie si l'item existe et n'est pas vide
             if (stack != null && !stack.isEmpty()) {
-                LOGGER.info("Item stack is not empty: {}", stack);
+                // Vérification côté serveur :
+                World world = player.getWorld();
+                if (!world.isClient()) { // C'est l'équivalent de `world instanceof ServerWorld`
+                    ModConfig config = ConfigLoader.loadConfig();
+                    boolean isProtected = isItemProtected(config, stack);
 
-                ModConfig config = ConfigLoader.loadConfig();
-                String itemId = Registries.ITEM.getId(stack.getItem()).toString();
-                LOGGER.info("Item ID: {}", itemId);
-
-                // Si l'item est protégé (dans la whitelist)
-                if (config.getWhitelistItems().contains(itemId)) {
-                    LOGGER.info("Item is protected: {}", itemId);
-
-                    // Demande une confirmation immédiate pour le drop
-                    if (!itemprotector_confirmDrop) {
-                        player.sendMessage(Text.literal("§cItem protégé! §7Cliquez à nouveau pour confirmer le drop."), true);
-                        LOGGER.info("Drop confirmation required for protected item: {}", itemId);
-                        itemprotector_confirmDrop = true;
-                        ci.cancel(); // Annule le drop pour attendre la confirmation
+                    if (isProtected) {
+                        if (!itemprotector_confirmDrop) {
+                            player.sendMessage(PROTECTED_ITEM_MESSAGE, false);
+                            itemprotector_confirmDrop = true;
+                            ci.cancel();
+                            System.out.println("[ItemProtector] Drop annulé (première confirmation) - SERVEUR"); // Log
+                        } else {
+                            itemprotector_confirmDrop = false;
+                            System.out.println("[ItemProtector] Drop confirmé - SERVEUR"); // Log
+                        }
                     } else {
-                        LOGGER.info("Drop confirmed for protected item: {}", itemId);
-                        itemprotector_confirmDrop = false; // Réinitialise après confirmation
+                        itemprotector_confirmDrop = false;
                     }
-                } else {
-                    LOGGER.info("Item is not protected: {}", itemId);
-                    itemprotector_confirmDrop = false; // Réinitialise si l'item n'est pas protégé
                 }
             } else {
-                LOGGER.info("Item stack is empty or null.");
-                itemprotector_confirmDrop = false; // Réinitialise si aucun item n'est détecté
+                itemprotector_confirmDrop = false;
             }
         } else {
-            // Réinitialise la confirmation pour les autres actions
             itemprotector_confirmDrop = false;
         }
     }
@@ -99,7 +112,7 @@ public abstract class ScreenHandlerMixin {
             at = @At("HEAD")
     )
     private void resetConfirmation(PlayerEntity player, CallbackInfo ci) {
-        LOGGER.info("Inventory closed for player: {}", player.getName().getString());
-        itemprotector_confirmDrop = false; // Réinitialise la confirmation quand l'inventaire est fermé
+        itemprotector_confirmDrop = false;
+        System.out.println("[ItemProtector] Confirmation réinitialisée lors de la fermeture de l'inventaire"); // Log
     }
 }
